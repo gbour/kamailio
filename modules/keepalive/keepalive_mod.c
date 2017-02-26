@@ -52,26 +52,23 @@
 
 MODULE_VERSION
 
-struct tm_binds tmb;
-
 /** parameters */
 static int mod_init(void);
 static void destroy(void);
-void ds_check_timer(unsigned int ticks, void* param);
-static void ds_options_callback( struct cell *t, int type,
-		struct tmcb_params *ps );
+extern void ka_check_timer(unsigned int ticks, void* param);
 
 // no default value
-str ka_peer = {NULL, 0};
+extern struct tm_binds tmb;
 
 
 static cmd_export_t cmds[]={
 	{0,0,0,0,0,0}
 };
 
+static int ka_mod_add_destination(modparam_t type, void *val);
 
 static param_export_t params[]={
-	{"peer", PARAM_STR, &ka_peer},
+	{"destination", PARAM_STRING|USE_FUNC_PARAM, (void *)ka_mod_add_destination},
 	{0,0,0}
 };
 
@@ -103,8 +100,6 @@ struct module_exports exports= {
  */
 static int mod_init(void)
 {
-	LM_DBG("gateway= %.*s\n", ka_peer.len, ka_peer.s);
-
 	if(register_mi_mod(exports.name, mi_cmds)!=0)
 	{
 		LM_ERR("failed to register MI commands\n");
@@ -117,7 +112,7 @@ static int mod_init(void)
 		return -1;
 	}
 
-	if(register_timer(ds_check_timer, NULL, 5) < 0)
+	if(register_timer(ka_check_timer, NULL, 5) < 0)
 		return -1;
 
 	return 0;
@@ -135,52 +130,20 @@ static void destroy(void)
  * parses string to dispatcher dst flags set
  * returns <0 on failure or int with flag on success.
  */
-int ds_parse_flags( char* flag_str, int flag_len )
+int ka_parse_flags( char* flag_str, int flag_len )
 {
 	return 0;
 }
 
 
-/*! \brief
- * Timer for checking probing destinations
- *
- * This timer is regularly fired.
- */
-void ds_check_timer(unsigned int ticks, void* param)
+static int ka_mod_add_destination(modparam_t type, void *val) 
 {
-	str ds_ping_method = str_init("OPTIONS");
-	str ds_ping_from   = str_init("sip:dispatcher@localhost");
-	str ds_outbound_proxy = {0, 0};
-	uac_req_t uac_r;
+	if (val == NULL)
+		return -1;
 
-	LM_DBG("ds_check_timer %.*s\n", ka_peer.len, ka_peer.s);
+	str dest = {val, strlen(val)};
+	LM_DBG("adding destination %.*s\n", dest.len, dest.s);
 
-	/* Send ping using TM-Module.
-	 * int request(str* m, str* ruri, str* to, str* from, str* h,
-	 *		str* b, str *oburi,
-	 *		transaction_cb cb, void* cbp); */
-	set_uac_req(&uac_r, &ds_ping_method, 0, 0, 0,
-			TMCB_LOCAL_COMPLETED, ds_options_callback,
-			NULL);
-
-	if (tmb.t_request(&uac_r,
-				&ka_peer,
-				&ka_peer,
-				&ds_ping_from,
-				&ds_outbound_proxy) < 0) {
-		LM_ERR("unable to ping [%.*s]\n", ka_peer.len, ka_peer.s);
-	}
-
-	return;
+	return ka_add_dest(dest, 0);
 }
 
-/*! \brief
- * Callback-Function for the OPTIONS-Request
- * This Function is called, as soon as the Transaction is finished
- * (e. g. a Response came in, the timeout was hit, ...)
- */
-static void ds_options_callback( struct cell *t, int type,
-		struct tmcb_params *ps )
-{
-	LM_DBG("options callback\n");
-}
