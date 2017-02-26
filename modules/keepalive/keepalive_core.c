@@ -47,6 +47,7 @@
 #include "../../mod_fix.h"
 #include "../../rpc.h"
 #include "../../rpc_lookup.h"
+#include "../../lib/kcore/faked_msg.h"
 
 #include "../../modules/tm/tm_load.h"
 
@@ -56,9 +57,7 @@ struct tm_binds tmb;
 ka_dest_t *ka_list = NULL;
 
 
-static void ka_options_callback( struct cell *t, int type,
-		struct tmcb_params *ps );
-
+static void ka_options_callback( struct cell *t, int type, struct tmcb_params *ps );
 
 
 /*! \brief
@@ -102,8 +101,64 @@ void ka_check_timer(unsigned int ticks, void* param)
  * This Function is called, as soon as the Transaction is finished
  * (e. g. a Response came in, the timeout was hit, ...)
  */
+static void ka_run_route(sip_msg_t *msg, str *uri, char *route);
 static void ka_options_callback( struct cell *t, int type,
 		struct tmcb_params *ps )
 {
-	LM_DBG("options callback\n");
+	str uri = {0, 0};
+	sip_msg_t *msg = NULL;
+
+	uri.s = t->to.s + 5;
+	uri.len = t->to.len - 8;
+	LM_DBG("OPTIONS-Request was finished with code %d (to %.*s)\n",
+			ps->code, uri.len, uri.s);
+
+	// 408 Timeout
+	if (ps->code == 408) {
+		ka_run_route(msg, &uri, "keepalive:dst-down");
+	} else {
+		ka_run_route(msg, &uri, "keepalive:dst-up");
+	}
 }
+
+static void ka_run_route(sip_msg_t *msg, str *uri, char *route)
+{
+	int rt, backup_rt;
+	struct run_act_ctx ctx;
+	sip_msg_t *fmsg;
+
+	if (route == NULL)
+	{
+		LM_ERR("bad route\n");
+		return;
+	}
+
+	LM_DBG("ka_run_route event_route[%s]\n", route);
+
+	rt = route_get(&event_rt, route);
+	if (rt < 0 || event_rt.rlist[rt] == NULL)
+	{
+		LM_DBG("route *%s* does not exist", route);
+		return;
+	}
+
+	fmsg = msg;
+	if (fmsg == NULL)
+	{
+		if (faked_msg_init() < 0)
+		{
+			LM_ERR("faked_msg_init() failed\n");
+			return;
+		}
+		fmsg = faked_msg_next();
+		fmsg->parsed_orig_ruri_ok = 0;
+		fmsg->new_uri = *uri;
+	}
+
+	backup_rt = get_route_type();
+	set_route_type(REQUEST_ROUTE);
+	init_run_actions_ctx(&ctx);
+	run_top_route(event_rt.rlist[rt], fmsg, 0);
+	set_route_type(backup_rt);
+}
+
