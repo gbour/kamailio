@@ -1,9 +1,10 @@
 /**
- * dispatcher module - load balancing
+ * keepalive module - remote destinations probing
  *
  * Copyright (C) 2004-2005 FhG Fokus
  * Copyright (C) 2006 Voice Sistem SRL
  * Copyright (C) 2015 Daniel-Constantin Mierla (asipto.com)
+ * Copyright (C) 2016 Guillaume Bour <guillaume@bour.cc>
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -51,39 +52,55 @@
 #include "../../modules/tm/tm_load.h"
 
 #include "keepalive.h"
-extern ka_dest_t *ka_list;
-   
+#include "api.h"
+
 
 /*
- * add new destination
+ * Regroup all exported functions in keepalive_api_t structure
+ *
+ */
+int bind_keepalive(keepalive_api_t* api)
+{
+	if (!api) {
+		ERR("Invalid parameter value\n");
+		return -1;
+	}
+
+	api->add_destination = ka_add_dest;
+	return 0;
+}
+
+/*
+ * Add a new destination in keepalive pool
  */
 int ka_add_dest(str uri, int flags) {
 	LM_DBG("adding destination: %.*s\n", uri.len, uri.s);
 
-	ka_dest_t *ndest = (ka_dest_t *) shm_malloc(sizeof(ka_dest_t));
-	if(ndest == NULL) {
+	ka_dest_t *dest = (ka_dest_t *) shm_malloc(sizeof(ka_dest_t));
+	if(dest == NULL) {
 		LM_ERR("no more memory.\n");
 		goto err;
 	}
-	memset(ndest, 0, sizeof(ka_dest_t));
+	memset(dest, 0, sizeof(ka_dest_t));
 
-	ndest->uri.s = (char*) shm_malloc((uri.len + 1) * sizeof(char));
-	if(ndest->uri.s==NULL)
+	// TODO: add sip: prefix if missing
+	dest->uri.s = (char*) shm_malloc((uri.len + 1) * sizeof(char));
+	if(dest->uri.s==NULL)
 	{
 		LM_ERR("no more memory!\n");
-		shm_free(ndest);
+		shm_free(dest);
 
 		goto err;
 	}
 
-	strncpy(ndest->uri.s, uri.s, uri.len);
-	ndest->uri.s[uri.len] = '\0';
-	ndest->uri.len = uri.len;
+	strncpy(dest->uri.s, uri.s, uri.len);
+	dest->uri.s[uri.len] = '\0';
+	dest->uri.len = uri.len;
 
-	ndest->flags = flags;
+	dest->flags = flags;
 
-	ndest->next = ka_list;
-	ka_list = ndest;
+	dest->next                  = ka_destinations_list->first;
+	ka_destinations_list->first = dest;
 
 	return 0;
 
@@ -91,5 +108,9 @@ err:
 	return -1;
 }
 
+/*
+ * TODO
+ */
 int ka_rm_dest() {
+	return -1;
 }

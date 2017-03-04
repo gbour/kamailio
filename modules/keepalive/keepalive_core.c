@@ -1,9 +1,10 @@
 /**
- * dispatcher module - load balancing
+ * keepalive module - remote destinations probing
  *
  * Copyright (C) 2004-2005 FhG Fokus
  * Copyright (C) 2006 Voice Sistem SRL
  * Copyright (C) 2015 Daniel-Constantin Mierla (asipto.com)
+ * Copyright (C) 2016 Guillaume Bour <guillaume@bour.cc>
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -54,9 +55,8 @@
 #include "keepalive.h"
 
 struct tm_binds tmb;
-ka_dest_t *ka_list = NULL;
 
-
+static void ka_run_route(sip_msg_t *msg, str *uri, char *route);
 static void ka_options_callback( struct cell *t, int type, struct tmcb_params *ps );
 
 
@@ -73,7 +73,9 @@ void ka_check_timer(unsigned int ticks, void* param)
 	str ka_outbound_proxy = {0, 0};
 	uac_req_t uac_r;
 
-	for(ka_dest = ka_list; ka_dest != NULL; ka_dest = ka_dest->next) {
+	LM_DBG("ka check timer\n");
+
+	for(ka_dest = ka_destinations_list->first; ka_dest != NULL; ka_dest = ka_dest->next) {
 		LM_DBG("ka_check_timer dest:%.*s\n", ka_dest->uri.len, ka_dest->uri.s);
 
 		/* Send ping using TM-Module.
@@ -101,7 +103,6 @@ void ka_check_timer(unsigned int ticks, void* param)
  * This Function is called, as soon as the Transaction is finished
  * (e. g. a Response came in, the timeout was hit, ...)
  */
-static void ka_run_route(sip_msg_t *msg, str *uri, char *route);
 static void ka_options_callback( struct cell *t, int type,
 		struct tmcb_params *ps )
 {
@@ -121,6 +122,10 @@ static void ka_options_callback( struct cell *t, int type,
 	}
 }
 
+/*
+ * Execute kamailio script event routes
+ *
+ */
 static void ka_run_route(sip_msg_t *msg, str *uri, char *route)
 {
 	int rt, backup_rt;

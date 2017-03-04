@@ -1,7 +1,8 @@
 /**
- * keepalive module
+ * keepalive module - remote destinations probing
  * 
  * Copyright (C) 2004-2006 FhG Fokus
+ * Copyright (C) 2017 Guillaume Bour <guillaume@bour.cc>
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -55,6 +56,14 @@ typedef struct _ka_dest
 	struct _ka_dest *next;
 } ka_dest_t;
 
+typedef struct _ka_destinations_list
+{
+	ka_dest_t *first;
+} ka_destinations_list_t;
+
+extern ka_destinations_list_t *ka_destinations_list;
+
+int ka_add_dest(str uri, int flags);
 
 #endif
 
